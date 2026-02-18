@@ -177,6 +177,7 @@
                 this.enemySpawnRate = 1; // Number of enemies to spawn
                 this.gameTime = 0;
                 this.winner = null;
+                this.lastTimestamp = 0;
                 
                 this.setupEventListeners();
             }
@@ -215,10 +216,17 @@
                 this.participants.forEach(name => {
                     const div = document.createElement('div');
                     div.className = 'participant';
-                    div.innerHTML = `
-                        <span>${name}</span>
-                        <button class="removeBtn" onclick="game.removeParticipant('${name}')">Remove</button>
-                    `;
+                    
+                    const span = document.createElement('span');
+                    span.textContent = name;
+                    
+                    const button = document.createElement('button');
+                    button.className = 'removeBtn';
+                    button.textContent = 'Remove';
+                    button.addEventListener('click', () => this.removeParticipant(name));
+                    
+                    div.appendChild(span);
+                    div.appendChild(button);
                     list.appendChild(div);
                 });
             }
@@ -235,7 +243,9 @@
                     return new Player(
                         this.canvas.width / 2 + Math.cos(angle) * radius,
                         this.canvas.height / 2 + Math.sin(angle) * radius,
-                        name
+                        name,
+                        this.canvas.width,
+                        this.canvas.height
                     );
                 });
                 
@@ -434,6 +444,7 @@
                 this.enemySpawnRate = 1;
                 this.gameTime = 0;
                 this.winner = null;
+                this.lastTimestamp = 0;
                 
                 document.getElementById('winnerScreen').classList.add('hidden');
                 document.getElementById('setupScreen').classList.remove('hidden');
@@ -444,7 +455,12 @@
             gameLoop(timestamp = 0) {
                 if (this.state !== GameState.PLAYING) return;
                 
-                const deltaTime = 16; // Approximate 60 FPS
+                if (this.lastTimestamp === 0) {
+                    this.lastTimestamp = timestamp;
+                }
+                
+                const deltaTime = timestamp - this.lastTimestamp;
+                this.lastTimestamp = timestamp;
                 
                 this.update(deltaTime, timestamp);
                 this.render();
@@ -454,7 +470,7 @@
         }
 
         class Player {
-            constructor(x, y, name) {
+            constructor(x, y, name, canvasWidth, canvasHeight) {
                 this.x = x;
                 this.y = y;
                 this.name = name;
@@ -467,6 +483,8 @@
                 this.shootInterval = 500; // Shoot every 500ms
                 this.lastShot = 0;
                 this.color = '#00ff00'; // Green
+                this.canvasWidth = canvasWidth;
+                this.canvasHeight = canvasHeight;
                 
                 // AI parameters
                 this.targetX = x;
@@ -500,13 +518,13 @@
                         }
                     } else {
                         // Random movement
-                        this.targetX = Math.random() * 1200;
-                        this.targetY = Math.random() * 800;
+                        this.targetX = Math.random() * this.canvasWidth;
+                        this.targetY = Math.random() * this.canvasHeight;
                     }
                     
                     // Keep within bounds
-                    this.targetX = Math.max(30, Math.min(1170, this.targetX));
-                    this.targetY = Math.max(30, Math.min(770, this.targetY));
+                    this.targetX = Math.max(30, Math.min(this.canvasWidth - 30, this.targetX));
+                    this.targetY = Math.max(30, Math.min(this.canvasHeight - 30, this.targetY));
                 }
                 
                 // Move toward target
@@ -546,7 +564,9 @@
                 const proj = new Projectile(
                     this.x + Math.cos(this.angle) * this.radius,
                     this.y + Math.sin(this.angle) * this.radius,
-                    this.angle
+                    this.angle,
+                    this.canvasWidth,
+                    this.canvasHeight
                 );
                 projectiles.push(proj);
             }
@@ -582,7 +602,6 @@
                 ctx.stroke();
                 
                 // Draw arrow head
-                const arrowSize = 5;
                 const arrowAngle = 0.5;
                 ctx.beginPath();
                 ctx.moveTo(
@@ -678,7 +697,7 @@
         }
 
         class Projectile {
-            constructor(x, y, angle) {
+            constructor(x, y, angle, canvasWidth, canvasHeight) {
                 this.x = x;
                 this.y = y;
                 this.angle = angle;
@@ -687,6 +706,8 @@
                 this.damage = 25;
                 this.dead = false;
                 this.color = '#ffff00'; // Yellow
+                this.canvasWidth = canvasWidth;
+                this.canvasHeight = canvasHeight;
             }
             
             update(deltaTime) {
@@ -694,7 +715,7 @@
                 this.y += Math.sin(this.angle) * this.speed;
                 
                 // Remove if off screen
-                if (this.x < 0 || this.x > 1200 || this.y < 0 || this.y > 800) {
+                if (this.x < 0 || this.x > this.canvasWidth || this.y < 0 || this.y > this.canvasHeight) {
                     this.dead = true;
                 }
             }
