@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Standup Troopers - Auto Battler</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #1a1a2e;
+            font-family: 'Arial', sans-serif;
+        }
+        
+        #gameContainer {
+            text-align: center;
+        }
+        
+        canvas {
+            border: 3px solid #16213e;
+            background: #0f3460;
+            display: block;
+            margin: 0 auto;
+        }
+        
+        #setupScreen, #winnerScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(26, 26, 46, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            border: 3px solid #16213e;
+            color: #e94560;
+            min-width: 400px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        
+        h1 {
+            color: #e94560;
+            margin-top: 0;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        h2 {
+            color: #00d9ff;
+            font-size: 1.8em;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 2px solid #16213e;
+            border-radius: 5px;
+            font-size: 16px;
+            background: #0f3460;
+            color: #fff;
+            box-sizing: border-box;
+        }
+        
+        button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #c93550;
+            transform: scale(1.05);
+        }
+        
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: scale(1);
+        }
+        
+        #participantsList {
+            margin: 20px 0;
+            text-align: left;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .participant {
+            background: #0f3460;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border-left: 4px solid #00d9ff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .removeBtn {
+            padding: 5px 10px;
+            font-size: 14px;
+            background: #666;
+        }
+        
+        .removeBtn:hover {
+            background: #e94560;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        #winnerName {
+            font-size: 3em;
+            color: #00d9ff;
+            margin: 20px 0;
+            text-shadow: 0 0 20px #00d9ff;
+            animation: glow 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes glow {
+            0%, 100% { text-shadow: 0 0 20px #00d9ff; }
+            50% { text-shadow: 0 0 40px #00d9ff, 0 0 60px #00d9ff; }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="setupScreen">
+            <h1>🎮 Standup Troopers 🎮</h1>
+            <h2>Add Participants</h2>
+            <input type="text" id="nameInput" placeholder="Enter participant name" />
+            <button id="addBtn">Add Participant</button>
+            <div id="participantsList"></div>
+            <button id="startBtn" disabled>Start Battle!</button>
+        </div>
+        
+        <div id="winnerScreen" class="hidden">
+            <h1>🏆 Battle Complete! 🏆</h1>
+            <h2>Next Standup Leader:</h2>
+            <div id="winnerName"></div>
+            <button id="playAgainBtn">Play Again</button>
+        </div>
+        
+        <canvas id="gameCanvas" width="1200" height="800" class="hidden"></canvas>
+    </div>
+
+    <script>
+        // Game State
+        const GameState = {
+            SETUP: 'setup',
+            PLAYING: 'playing',
+            ENDED: 'ended'
+        };
+
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.state = GameState.SETUP;
+                this.participants = [];
+                this.players = [];
+                this.enemies = [];
+                this.projectiles = [];
+                this.lastEnemySpawn = 0;
+                this.enemySpawnInterval = 3000; // Start at 3 seconds
+                this.enemySpawnRate = 1; // Number of enemies to spawn
+                this.gameTime = 0;
+                this.winner = null;
+                this.lastTimestamp = 0;
+                
+                this.setupEventListeners();
+            }
+            
+            setupEventListeners() {
+                document.getElementById('addBtn').addEventListener('click', () => this.addParticipant());
+                document.getElementById('nameInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.addParticipant();
+                });
+                document.getElementById('startBtn').addEventListener('click', () => this.startGame());
+                document.getElementById('playAgainBtn').addEventListener('click', () => this.reset());
+            }
+            
+            addParticipant() {
+                const input = document.getElementById('nameInput');
+                const name = input.value.trim();
+                
+                if (name && !this.participants.includes(name)) {
+                    this.participants.push(name);
+                    this.updateParticipantsList();
+                    input.value = '';
+                    document.getElementById('startBtn').disabled = this.participants.length < 2;
+                }
+            }
+            
+            removeParticipant(name) {
+                this.participants = this.participants.filter(p => p !== name);
+                this.updateParticipantsList();
+                document.getElementById('startBtn').disabled = this.participants.length < 2;
+            }
+            
+            updateParticipantsList() {
+                const list = document.getElementById('participantsList');
+                list.innerHTML = '';
+                
+                this.participants.forEach(name => {
+                    const div = document.createElement('div');
+                    div.className = 'participant';
+                    
+                    const span = document.createElement('span');
+                    span.textContent = name;
+                    
+                    const button = document.createElement('button');
+                    button.className = 'removeBtn';
+                    button.textContent = 'Remove';
+                    button.addEventListener('click', () => this.removeParticipant(name));
+                    
+                    div.appendChild(span);
+                    div.appendChild(button);
+                    list.appendChild(div);
+                });
+            }
+            
+            startGame() {
+                this.state = GameState.PLAYING;
+                document.getElementById('setupScreen').classList.add('hidden');
+                this.canvas.classList.remove('hidden');
+                
+                // Create players from participants
+                this.players = this.participants.map((name, index) => {
+                    const angle = (Math.PI * 2 * index) / this.participants.length;
+                    const radius = 200;
+                    return new Player(
+                        this.canvas.width / 2 + Math.cos(angle) * radius,
+                        this.canvas.height / 2 + Math.sin(angle) * radius,
+                        name,
+                        this.canvas.width,
+                        this.canvas.height
+                    );
+                });
+                
+                this.gameLoop();
+            }
+            
+            spawnEnemies(timestamp) {
+                if (timestamp - this.lastEnemySpawn > this.enemySpawnInterval) {
+                    this.lastEnemySpawn = timestamp;
+                    
+                    // Increase difficulty over time
+                    if (this.gameTime > 10000) {
+                        this.enemySpawnRate = 2;
+                        this.enemySpawnInterval = 2500;
+                    }
+                    if (this.gameTime > 30000) {
+                        this.enemySpawnRate = 3;
+                        this.enemySpawnInterval = 2000;
+                    }
+                    if (this.gameTime > 60000) {
+                        this.enemySpawnRate = 4;
+                        this.enemySpawnInterval = 1500;
+                    }
+                    
+                    for (let i = 0; i < this.enemySpawnRate; i++) {
+                        const side = Math.floor(Math.random() * 4);
+                        let x, y;
+                        
+                        switch(side) {
+                            case 0: // Top
+                                x = Math.random() * this.canvas.width;
+                                y = -20;
+                                break;
+                            case 1: // Right
+                                x = this.canvas.width + 20;
+                                y = Math.random() * this.canvas.height;
+                                break;
+                            case 2: // Bottom
+                                x = Math.random() * this.canvas.width;
+                                y = this.canvas.height + 20;
+                                break;
+                            case 3: // Left
+                                x = -20;
+                                y = Math.random() * this.canvas.height;
+                                break;
+                        }
+                        
+                        this.enemies.push(new Enemy(x, y));
+                    }
+                }
+            }
+            
+            update(deltaTime, timestamp) {
+                this.gameTime = timestamp;
+                
+                // Update players
+                this.players.forEach(player => {
+                    player.update(deltaTime, this.players, this.enemies);
+                    
+                    // Player shooting
+                    if (timestamp - player.lastShot > player.shootInterval) {
+                        const nearestEnemy = this.findNearest(player, this.enemies);
+                        if (nearestEnemy) {
+                            player.shoot(nearestEnemy, this.projectiles);
+                            player.lastShot = timestamp;
+                        }
+                    }
+                });
+                
+                // Update enemies
+                this.enemies.forEach(enemy => {
+                    enemy.update(deltaTime, this.players);
+                });
+                
+                // Update projectiles
+                this.projectiles = this.projectiles.filter(proj => {
+                    proj.update(deltaTime);
+                    return !proj.dead;
+                });
+                
+                // Check collisions
+                this.checkCollisions();
+                
+                // Spawn enemies
+                this.spawnEnemies(timestamp);
+                
+                // Remove dead entities
+                this.players = this.players.filter(p => !p.dead);
+                this.enemies = this.enemies.filter(e => !e.dead);
+                
+                // Check win condition
+                if (this.players.length === 1) {
+                    this.endGame(this.players[0]);
+                } else if (this.players.length === 0) {
+                    this.endGame(null);
+                }
+            }
+            
+            findNearest(entity, targets) {
+                let nearest = null;
+                let minDist = Infinity;
+                
+                targets.forEach(target => {
+                    const dist = Math.hypot(target.x - entity.x, target.y - entity.y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearest = target;
+                    }
+                });
+                
+                return nearest;
+            }
+            
+            checkCollisions() {
+                // Projectiles vs Enemies
+                this.projectiles.forEach(proj => {
+                    if (proj.dead) return;
+                    
+                    this.enemies.forEach(enemy => {
+                        if (enemy.dead) return;
+                        
+                        const dist = Math.hypot(proj.x - enemy.x, proj.y - enemy.y);
+                        if (dist < proj.radius + enemy.radius) {
+                            proj.dead = true;
+                            enemy.health -= proj.damage;
+                            if (enemy.health <= 0) {
+                                enemy.dead = true;
+                            }
+                        }
+                    });
+                });
+                
+                // Enemies vs Players
+                this.enemies.forEach(enemy => {
+                    if (enemy.dead) return;
+                    
+                    this.players.forEach(player => {
+                        if (player.dead) return;
+                        
+                        const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+                        if (dist < enemy.radius + player.radius) {
+                            player.health -= enemy.damage;
+                            enemy.dead = true; // Enemy dies on contact
+                            
+                            if (player.health <= 0) {
+                                player.dead = true;
+                            }
+                        }
+                    });
+                });
+            }
+            
+            render() {
+                // Clear canvas
+                this.ctx.fillStyle = '#0f3460';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Render entities
+                this.enemies.forEach(enemy => enemy.render(this.ctx));
+                this.projectiles.forEach(proj => proj.render(this.ctx));
+                this.players.forEach(player => player.render(this.ctx));
+                
+                // Render UI
+                this.ctx.fillStyle = '#fff';
+                this.ctx.font = '20px Arial';
+                this.ctx.fillText(`Survivors: ${this.players.length}`, 10, 30);
+                this.ctx.fillText(`Enemies: ${this.enemies.length}`, 10, 60);
+                this.ctx.fillText(`Time: ${Math.floor(this.gameTime / 1000)}s`, 10, 90);
+            }
+            
+            endGame(winner) {
+                this.state = GameState.ENDED;
+                this.winner = winner;
+                this.canvas.classList.add('hidden');
+                
+                const winnerScreen = document.getElementById('winnerScreen');
+                const winnerName = document.getElementById('winnerName');
+                
+                if (winner) {
+                    winnerName.textContent = winner.name;
+                } else {
+                    winnerName.textContent = 'No survivors!';
+                }
+                
+                winnerScreen.classList.remove('hidden');
+            }
+            
+            reset() {
+                this.state = GameState.SETUP;
+                this.participants = [];
+                this.players = [];
+                this.enemies = [];
+                this.projectiles = [];
+                this.lastEnemySpawn = 0;
+                this.enemySpawnInterval = 3000;
+                this.enemySpawnRate = 1;
+                this.gameTime = 0;
+                this.winner = null;
+                this.lastTimestamp = 0;
+                
+                document.getElementById('winnerScreen').classList.add('hidden');
+                document.getElementById('setupScreen').classList.remove('hidden');
+                document.getElementById('participantsList').innerHTML = '';
+                document.getElementById('startBtn').disabled = true;
+            }
+            
+            gameLoop(timestamp = 0) {
+                if (this.state !== GameState.PLAYING) return;
+                
+                if (this.lastTimestamp === 0) {
+                    this.lastTimestamp = timestamp;
+                }
+                
+                const deltaTime = timestamp - this.lastTimestamp;
+                this.lastTimestamp = timestamp;
+                
+                this.update(deltaTime, timestamp);
+                this.render();
+                
+                requestAnimationFrame((ts) => this.gameLoop(ts));
+            }
+        }
+
+        class Player {
+            constructor(x, y, name, canvasWidth, canvasHeight) {
+                this.x = x;
+                this.y = y;
+                this.name = name;
+                this.radius = 20;
+                this.speed = 2;
+                this.health = 100;
+                this.maxHealth = 100;
+                this.dead = false;
+                this.angle = Math.random() * Math.PI * 2;
+                this.shootInterval = 500; // Shoot every 500ms
+                this.lastShot = 0;
+                this.color = '#00ff00'; // Green
+                this.canvasWidth = canvasWidth;
+                this.canvasHeight = canvasHeight;
+                
+                // AI parameters
+                this.targetX = x;
+                this.targetY = y;
+                this.nextTargetUpdate = 0;
+            }
+            
+            update(deltaTime, allPlayers, enemies) {
+                // AI: Move away from enemies, maintain some distance from other players
+                const now = Date.now();
+                
+                if (now > this.nextTargetUpdate) {
+                    this.nextTargetUpdate = now + 1000; // Update target every second
+                    
+                    // Find nearest enemy
+                    const nearestEnemy = this.findNearest(enemies);
+                    
+                    if (nearestEnemy) {
+                        const dx = this.x - nearestEnemy.x;
+                        const dy = this.y - nearestEnemy.y;
+                        const dist = Math.hypot(dx, dy);
+                        
+                        // Move away if too close, otherwise strafe
+                        if (dist < 200) {
+                            this.targetX = this.x + (dx / dist) * 100;
+                            this.targetY = this.y + (dy / dist) * 100;
+                        } else {
+                            // Strafe perpendicular to enemy
+                            this.targetX = this.x + (-dy / dist) * 80;
+                            this.targetY = this.y + (dx / dist) * 80;
+                        }
+                    } else {
+                        // Random movement
+                        this.targetX = Math.random() * this.canvasWidth;
+                        this.targetY = Math.random() * this.canvasHeight;
+                    }
+                    
+                    // Keep within bounds
+                    this.targetX = Math.max(30, Math.min(this.canvasWidth - 30, this.targetX));
+                    this.targetY = Math.max(30, Math.min(this.canvasHeight - 30, this.targetY));
+                }
+                
+                // Move toward target
+                const dx = this.targetX - this.x;
+                const dy = this.targetY - this.y;
+                const dist = Math.hypot(dx, dy);
+                
+                if (dist > 5) {
+                    this.x += (dx / dist) * this.speed;
+                    this.y += (dy / dist) * this.speed;
+                    this.angle = Math.atan2(dy, dx);
+                }
+                
+                // Update angle to face nearest enemy
+                const nearestEnemy = this.findNearest(enemies);
+                if (nearestEnemy) {
+                    this.angle = Math.atan2(nearestEnemy.y - this.y, nearestEnemy.x - this.x);
+                }
+            }
+            
+            findNearest(targets) {
+                let nearest = null;
+                let minDist = Infinity;
+                
+                targets.forEach(target => {
+                    const dist = Math.hypot(target.x - this.x, target.y - this.y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearest = target;
+                    }
+                });
+                
+                return nearest;
+            }
+            
+            shoot(target, projectiles) {
+                const proj = new Projectile(
+                    this.x + Math.cos(this.angle) * this.radius,
+                    this.y + Math.sin(this.angle) * this.radius,
+                    this.angle,
+                    this.canvasWidth,
+                    this.canvasHeight
+                );
+                projectiles.push(proj);
+            }
+            
+            render(ctx) {
+                // Draw health bar
+                const barWidth = this.radius * 2;
+                const barHeight = 5;
+                const barX = this.x - this.radius;
+                const barY = this.y - this.radius - 15;
+                
+                ctx.fillStyle = '#333';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+                
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(barX, barY, barWidth * (this.health / this.maxHealth), barHeight);
+                
+                // Draw player circle
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw direction arrow
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(
+                    this.x + Math.cos(this.angle) * (this.radius + 10),
+                    this.y + Math.sin(this.angle) * (this.radius + 10)
+                );
+                ctx.stroke();
+                
+                // Draw arrow head
+                const arrowAngle = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(
+                    this.x + Math.cos(this.angle) * (this.radius + 10),
+                    this.y + Math.sin(this.angle) * (this.radius + 10)
+                );
+                ctx.lineTo(
+                    this.x + Math.cos(this.angle - arrowAngle) * (this.radius + 5),
+                    this.y + Math.sin(this.angle - arrowAngle) * (this.radius + 5)
+                );
+                ctx.moveTo(
+                    this.x + Math.cos(this.angle) * (this.radius + 10),
+                    this.y + Math.sin(this.angle) * (this.radius + 10)
+                );
+                ctx.lineTo(
+                    this.x + Math.cos(this.angle + arrowAngle) * (this.radius + 5),
+                    this.y + Math.sin(this.angle + arrowAngle) * (this.radius + 5)
+                );
+                ctx.stroke();
+                
+                // Draw name
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(this.name, this.x, this.y - this.radius - 25);
+            }
+        }
+
+        class Enemy {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 15;
+                this.speed = 1.5;
+                this.health = 50;
+                this.maxHealth = 50;
+                this.dead = false;
+                this.damage = 10;
+                this.color = '#ff0000'; // Red
+            }
+            
+            update(deltaTime, players) {
+                if (players.length === 0) return;
+                
+                // Find nearest player
+                let nearest = null;
+                let minDist = Infinity;
+                
+                players.forEach(player => {
+                    const dist = Math.hypot(player.x - this.x, player.y - this.y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearest = player;
+                    }
+                });
+                
+                if (nearest) {
+                    const dx = nearest.x - this.x;
+                    const dy = nearest.y - this.y;
+                    const dist = Math.hypot(dx, dy);
+                    
+                    this.x += (dx / dist) * this.speed;
+                    this.y += (dy / dist) * this.speed;
+                }
+            }
+            
+            render(ctx) {
+                // Draw health bar
+                if (this.health < this.maxHealth) {
+                    const barWidth = this.radius * 2;
+                    const barHeight = 3;
+                    const barX = this.x - this.radius;
+                    const barY = this.y - this.radius - 8;
+                    
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(barX, barY, barWidth, barHeight);
+                    
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(barX, barY, barWidth * (this.health / this.maxHealth), barHeight);
+                }
+                
+                // Draw enemy circle
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw outline
+                ctx.strokeStyle = '#aa0000';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+
+        class Projectile {
+            constructor(x, y, angle, canvasWidth, canvasHeight) {
+                this.x = x;
+                this.y = y;
+                this.angle = angle;
+                this.speed = 8;
+                this.radius = 4;
+                this.damage = 25;
+                this.dead = false;
+                this.color = '#ffff00'; // Yellow
+                this.canvasWidth = canvasWidth;
+                this.canvasHeight = canvasHeight;
+            }
+            
+            update(deltaTime) {
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+                
+                // Remove if off screen
+                if (this.x < 0 || this.x > this.canvasWidth || this.y < 0 || this.y > this.canvasHeight) {
+                    this.dead = true;
+                }
+            }
+            
+            render(ctx) {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw glow
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
+
+        // Initialize game
+        const game = new Game();
+    </script>
+</body>
+</html>
