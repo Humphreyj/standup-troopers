@@ -224,7 +224,10 @@
           this.wilhelmScream = new Audio(
             "assets/Wilhelm Scream Remastered.wav",
           );
-          this.wilhelmScream.volume = 0.3; // Reduced volume
+          this.wilhelmScream.volume = 0.15; // Further reduced volume
+
+          this.victoryMusic = new Audio("assets/victory.mp3");
+          this.victoryMusic.volume = 0.6;
 
           this.setupEventListeners();
           this.updateParticipantsList();
@@ -664,6 +667,12 @@
           // Stop background music
           this.bgMusic.pause();
           this.bgMusic.currentTime = 0;
+
+          // Play victory music
+          this.victoryMusic.currentTime = 0;
+          this.victoryMusic
+            .play()
+            .catch((e) => console.log("Audio play failed:", e));
 
           const winnerScreen = document.getElementById("winnerScreen");
           const winnerName = document.getElementById("winnerName");
