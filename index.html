@@ -216,6 +216,16 @@
           this.winner = null;
           this.lastTimestamp = 0;
 
+          // Setup audio
+          this.bgMusic = new Audio("assets/Slider.mp3");
+          this.bgMusic.loop = true;
+          this.bgMusic.volume = 0.5;
+
+          this.wilhelmScream = new Audio(
+            "assets/Wilhelm Scream Remastered.wav",
+          );
+          this.wilhelmScream.volume = 0.3; // Reduced volume
+
           this.setupEventListeners();
           this.updateParticipantsList();
           document.getElementById("startBtn").disabled = false;
@@ -292,6 +302,12 @@
           this.state = GameState.PLAYING;
           document.getElementById("setupScreen").classList.add("hidden");
           this.canvas.classList.remove("hidden");
+
+          // Start background music
+          this.bgMusic.currentTime = 0;
+          this.bgMusic
+            .play()
+            .catch((e) => console.log("Audio play failed:", e));
 
           // Create players from participants
           this.players = this.participants.map((name, index) => {
@@ -518,6 +534,11 @@
                         p.health -= enemy.damage;
                         if (p.health <= 0) {
                           p.dead = true;
+                          // Play Wilhelm scream (100% for testing)
+                          this.wilhelmScream.currentTime = 0;
+                          this.wilhelmScream
+                            .play()
+                            .catch((e) => console.log("Audio play failed:", e));
                         }
                       }
                     }
@@ -526,6 +547,11 @@
                   player.health -= enemy.damage;
                   if (player.health <= 0) {
                     player.dead = true;
+                    // Play Wilhelm scream (100% for testing)
+                    this.wilhelmScream.currentTime = 0;
+                    this.wilhelmScream
+                      .play()
+                      .catch((e) => console.log("Audio play failed:", e));
                   }
                 }
 
@@ -562,6 +588,11 @@
                 player.health -= proj.damage;
                 if (player.health <= 0) {
                   player.dead = true;
+                  // Play Wilhelm scream (100% for testing)
+                  this.wilhelmScream.currentTime = 0;
+                  this.wilhelmScream
+                    .play()
+                    .catch((e) => console.log("Audio play failed:", e));
                 }
               }
             });
@@ -629,6 +660,10 @@
           this.state = GameState.ENDED;
           this.winner = winner;
           this.canvas.classList.add("hidden");
+
+          // Stop background music
+          this.bgMusic.pause();
+          this.bgMusic.currentTime = 0;
 
           const winnerScreen = document.getElementById("winnerScreen");
           const winnerName = document.getElementById("winnerName");
@@ -818,8 +853,28 @@
           const dist = Math.hypot(dx, dy);
 
           if (dist > 5) {
-            this.x += (dx / dist) * this.speed;
-            this.y += (dy / dist) * this.speed;
+            let moveX = (dx / dist) * this.speed;
+            let moveY = (dy / dist) * this.speed;
+
+            // Add separation from other players to prevent overlap
+            allPlayers.forEach((other) => {
+              if (other !== this && !other.dead) {
+                const otherDx = this.x - other.x;
+                const otherDy = this.y - other.y;
+                const otherDist = Math.hypot(otherDx, otherDy);
+
+                // If too close to another player, push away
+                const minDistance = this.radius + other.radius + 10; // 10px buffer
+                if (otherDist < minDistance && otherDist > 0) {
+                  const pushStrength = (minDistance - otherDist) / minDistance;
+                  moveX += (otherDx / otherDist) * pushStrength * 2;
+                  moveY += (otherDy / otherDist) * pushStrength * 2;
+                }
+              }
+            });
+
+            this.x += moveX;
+            this.y += moveY;
             this.angle = Math.atan2(dy, dx);
           }
 
